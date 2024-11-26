@@ -5,8 +5,8 @@ provider "aws" {
 terraform {
   required_version = ">= 1.0"
   backend "s3" {
-    bucket = "your-terraform-state-bucket"
-    key    = "eks/terraform.tfstate"
-    region = "us-west-2"
+    bucket = var.s3_bucket_name
+    key    = var.state_file_key
+    region = var.aws_region
   }
 }
