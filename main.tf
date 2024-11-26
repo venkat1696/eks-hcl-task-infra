@@ -14,39 +14,72 @@ resource "aws_subnet" "private_subnets" {
  cidr_block = element(var.private_subnet_cidrs, count.index)
 }
 
-resource "aws_eks_cluster" "squad-2" {
-  name     = "squad-2"
-
-  cluster_endpoint_private_access = true
-  cluster_endpoint_public_access  = true
-
-  vpc_id     = resource.aws_vpc.main.id
-  subnet_ids = resource.aws_subnet.private_subnet.id
-
-  eks_managed_node_group_defaults = {
-    disk_size = 50
+resource "aws_iam_role" "demo" {
+  name = "eks-cluster-S2"
+  tags = {
+    tag-key = "eks-cluster-S2"
   }
 
-  eks_managed_node_groups = {
-    general = {
-      desired_size = 1
-      min_size     = 1
-      max_size     = 4
-
-  instance_types = ["t2.micro"]
+  assume_role_policy = <<POLICY
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "Service": [
+                    "eks.amazonaws.com"
+                ]
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
 }
-}
+POLICY
 }
 
-resource "aws_dynamodb_table" "squad2" {
-  name             = "squad2-lock-table"
-  hash_key         = "statelock"
-  billing_mode     = "PAY_PER_REQUEST"
-  stream_enabled   = true
-  stream_view_type = "NEW_AND_OLD_IMAGES"
+# eks policy attachment
 
-  attribute {
-    name = "statelock"
-    type = "S"
-  }
+resource "aws_iam_role_policy_attachment" "demo-AmazonEKSClusterPolicy" {
+  role       = aws_iam_role.demo.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+}
+
+resource "aws_iam_role" "nodes" {
+  name = "eks-node-group-S2"
+
+  assume_role_policy = jsonencode({
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "ec2.amazonaws.com"
+      }
+    }]
+    Version = "2012-10-17"
+  })
+}
+
+# IAM policy attachment to nodegroup
+
+resource "aws_iam_role_policy_attachment" "nodes-AmazonEKSWorkerNodePolicy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  role       = aws_iam_role.nodes.name
+}
+
+resource "aws_iam_role_policy_attachment" "nodes-AmazonEKS_CNI_Policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+  role       = aws_iam_role.nodes.name
+}
+
+resource "aws_iam_role_policy_attachment" "nodes-AmazonEC2ContainerRegistryReadOnly" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  role       = aws_iam_role.nodes.name
+}
+
+resource "aws_eks_node_group" "private-nodes" {
+  cluster_name    = aws_eks_cluster.demo.name
+  node_group_name = "private-nodes"
+  node_role_arn   = aws_iam_role.nodes.arn
+
 }
